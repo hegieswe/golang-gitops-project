@@ -11,7 +11,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o my-app main.go
 
 # Stage 2: Final stage (Runtime)
-FROM alpine:3.21
+FROM alpine:3.23
 
 # Install ca-certificates untuk koneksi HTTPS jika diperlukan
 RUN apk --no-cache add ca-certificates
