@@ -1,5 +1,5 @@
 # Stage 1: Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:tip-alpine3.23 AS builder
 
 # Set working directory
 WORKDIR /app
@@ -11,7 +11,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o my-app main.go
 
 # Stage 2: Final stage (Runtime)
-FROM alpine:latest
+FROM alpine:3.21
 
 # Install ca-certificates untuk koneksi HTTPS jika diperlukan
 RUN apk --no-cache add ca-certificates

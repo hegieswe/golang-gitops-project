@@ -1,123 +1,154 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ci.sh — Build & Push Docker Image ke Docker Hub
-#
-# Jalankan dari dalam root repository project (yang berisi Dockerfile).
-#
-# Config:
-#   Ubah DOCKER_ORG di bawah, atau export sebelum menjalankan script:
-#   export DOCKER_ORG=myusername && ./ci.sh
+# ci.sh — Build & Push Docker Image ke Docker Hub dengan Docker Buildx + Attest
 #
 # Usage:
 #   ./ci.sh              → build + push
-#   ./ci.sh --no-push    → build saja (tanpa push)
+#   ./ci.sh --info       → tampilkan build info saja (alias: -i, --dry-run, -n)
 # =============================================================================
 
 set -euo pipefail
 export DOCKER_BUILDKIT=1
 
-# ─── KONFIGURASI — sesuaikan bagian ini ──────────────────────────────────────
-DOCKER_ORG="${DOCKER_ORG:-hegieswe}"     # ← Ganti dengan Docker Hub username/org Anda
-PLATFORM="linux/amd64,linux/arm64"       # ← Multi-platform: AMD64 + ARM64 (Apple Silicon)
+# ─── KONFIGURASI ──────────────────────────────────────────────────────────────
+DOCKER_ORG="hegieswe"
+DEFAULT_PLATFORM="linux/amd64,linux/arm64"
+BUILDER_NAME="attest-builder"
+
+# Auto-detect Docker Repo Name dari nama folder repository
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+DOCKER_REPO=$(basename "$GIT_ROOT")
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Warna
 CYAN='\033[0;36m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-RED='\033[0;31m'; BOLD='\033[1m'; RESET='\033[0m'
+RED='\033[0;31m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 
-info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
-ok()      { echo -e "${GREEN}[OK]${RESET}    $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
-err()     { echo -e "${RED}[ERROR]${RESET} $*" >&2; exit 1; }
-step()    { echo -e "\n${BOLD}▶ $*${RESET}"; }
+_info()   { echo -e " • $(printf '%-10s' "$1"): ${BOLD}$2${RESET}"; }
+ok()      { echo -e "${GREEN}✔ $*${RESET}"; }
+warn()    { echo -e "${YELLOW}⚠ $*${RESET}"; }
+err()     { echo -e "${RED}✖ Error: $*${RESET}" >&2; exit 1; }
+run_cmd() { echo -e "${YELLOW}▶ $*${RESET}"; "$@"; }
 
-# Parse flag
+# ─── Parse args ───────────────────────────────────────────────────────────────
+INFO_ONLY=false
 PUSH=true
 for arg in "$@"; do
-  [[ "$arg" == "--no-push" ]] && PUSH=false
+  case "$arg" in
+    --info|-i|--dry-run|-n) INFO_ONLY=true ;;
+    --local|-l)             PUSH=false ;;
+  esac
 done
 
-# ─── Auto-detect: REPO NAME dari nama folder git root ────────────────────────
-GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) \
-  || err "Bukan git repository. Jalankan script dari dalam folder project."
-
-DOCKER_REPO=$(basename "$GIT_ROOT")
-
-# ─── Auto-detect: TAG dari git tag yang menunjuk ke commit saat ini ──────────
-GIT_TAG=$(git tag --points-at HEAD 2>/dev/null | head -n1)
-
-if [[ -n "$GIT_TAG" ]]; then
-  DOCKER_TAG="$GIT_TAG"
-  info "Tag dari git tag: ${BOLD}$DOCKER_TAG${RESET}"
+# Deteksi Platform
+if [[ "$PUSH" == "false" ]]; then
+  # Untuk local build (--load), hanya dukung single platform (host arch)
+  ARCH=$(uname -m | sed 's/x86_64/amd64/;s/arm64/arm64/;s/aarch64/arm64/')
+  PLATFORM="linux/${ARCH}"
 else
-  DOCKER_TAG=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
-  warn "Tidak ada git tag pada commit ini. Menggunakan: ${BOLD}$DOCKER_TAG${RESET}"
+  PLATFORM="$DEFAULT_PLATFORM"
 fi
 
-# ─── Validasi Dockerfile ─────────────────────────────────────────────────────
-[[ -f "Dockerfile" ]] || err "Dockerfile tidak ditemukan di direktori ini: $(pwd)"
+# ─── Paths ────────────────────────────────────────────────────────────────────
+REPO_DIR="$(pwd)"
 
-FULL_IMAGE="${DOCKER_ORG}/${DOCKER_REPO}:${DOCKER_TAG}"
-LATEST_IMAGE="${DOCKER_ORG}/${DOCKER_REPO}:latest"
+# ─── Git Info ─────────────────────────────────────────────────────────────────
+if GIT_TAG=$(git describe --tags --exact-match 2>/dev/null); then
+  IMAGE_TAG="$GIT_TAG"
+  BRANCH="production"
+else
+  IMAGE_TAG=$(git rev-parse --short=7 HEAD 2>/dev/null || echo "latest")
+  BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+fi
 
-# ─── Ringkasan ───────────────────────────────────────────────────────────────
-echo -e "\n${BOLD}═══════════════════════════════════════════${RESET}"
-echo -e "${BOLD}  CI — Docker Build & Push${RESET}"
-echo -e "${BOLD}═══════════════════════════════════════════${RESET}"
-info "Directory : $(pwd)"
-info "Image     : ${BOLD}$FULL_IMAGE${RESET}"
-info "Also tag  : ${BOLD}$LATEST_IMAGE${RESET}"
-info "Platform  : $PLATFORM"
-info "Push      : $PUSH"
+FULL_IMAGE="${DOCKER_ORG}/${DOCKER_REPO}:${IMAGE_TAG}"
 
-# ─── Step 1: Docker Login ────────────────────────────────────────────────────
-if [[ "$PUSH" == true ]]; then
-  step "1/3 Docker Hub Login"
+# ─── Build Info Box ───────────────────────────────────────────────────────────
+MODE_STR="Push to Registry"
+[[ "$PUSH" == "false" ]] && MODE_STR="Local Build (No Push)"
+
+echo
+echo -e "${DIM}╭─ ${RESET}${BOLD}Build Info${RESET}${DIM} ────────────────────────────────────────────╮${RESET}"
+_info "Image"    "$FULL_IMAGE"
+_info "Mode"     "$MODE_STR"
+_info "Platform" "$PLATFORM"
+_info "Branch"   "$BRANCH"
+_info "Builder"  "$BUILDER_NAME"
+echo -e "${DIM}╰────────────────────────────────────────────────────────────╯${RESET}"
+echo
+
+if [[ "$INFO_ONLY" == true ]]; then
+  echo -e "${YELLOW}ℹ️  Info only mode - no build${RESET}"
+  exit 0
+fi
+
+# ─── Step 1: Docker Login ─────────────────────────────────────────────────────
+if [[ "$PUSH" == "true" ]]; then
+  echo -e "\n${BOLD}▶ 1/3 Docker Hub Login${RESET}"
   if [[ -n "${DOCKER_PASSWORD:-}" && -n "${DOCKER_USERNAME:-}" ]]; then
     echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin
     ok "Login berhasil."
   else
     warn "Env DOCKER_USERNAME/DOCKER_PASSWORD tidak diset. Menggunakan sesi login yang ada."
   fi
+else
+  echo -e "\n${BOLD}▶ 1/3 Docker Hub Login${RESET} ${DIM}(Skipped for local build)${RESET}"
 fi
 
-# ─── Step 2: Build ───────────────────────────────────────────────────────────
-step "2/3 Build & Push Image"
-if [[ "$PUSH" == true ]]; then
-  # Multi-platform build HARUS push langsung ke registry (tidak bisa load ke daemon lokal)
-  info "Building & pushing: $FULL_IMAGE"
-  BUILD_START=$(date +%s)
-  docker buildx build \
-    --platform "$PLATFORM" \
-    --tag "$FULL_IMAGE" \
-    --tag "$LATEST_IMAGE" \
-    --push \
-    .
+# ─── Step 2: Ensure Buildx Builder ───────────────────────────────────────────
+echo -e "\n${BOLD}▶ 2/3 Ensure Buildx Builder '${BUILDER_NAME}'${RESET}"
+if docker buildx inspect "$BUILDER_NAME" &>/dev/null; then
+  run_cmd docker buildx use "$BUILDER_NAME"
+  ok "Builder '${BUILDER_NAME}' sudah ada, diaktifkan."
 else
-  # Build saja tanpa push (single platform, bisa diload ke daemon lokal)
-  info "Building (no push): $FULL_IMAGE"
-  BUILD_START=$(date +%s)
-  docker buildx build \
-    --platform "linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" \
-    --tag "$FULL_IMAGE" \
-    --tag "$LATEST_IMAGE" \
-    --load \
-    .
+  echo -e "${CYAN}📦 Membuat builder '${BUILDER_NAME}'...${RESET}"
+  run_cmd docker buildx create --name "$BUILDER_NAME" --use
+  ok "Builder '${BUILDER_NAME}' berhasil dibuat."
 fi
+
+# ─── Step 3: Build ────────────────────────────────────────────────────────────
+ACTION_FLAG="--push"
+ATTEST_FLAGS=(--attest "type=sbom" --attest "type=provenance,mode=max")
+
+if [[ "$PUSH" == "false" ]]; then
+  ACTION_FLAG="--load"
+  # Attestations tidak didukung oleh local Docker daemon (non-containerd) saat --load
+  ATTEST_FLAGS=()
+fi
+
+echo -e "\n${BOLD}▶ 3/3 Build & ${ACTION_FLAG#--} → ${FULL_IMAGE}${RESET}"
+BUILD_START=$(date +%s)
+
+run_cmd docker buildx build \
+  --platform "$PLATFORM" \
+  --no-cache \
+  --builder "$BUILDER_NAME" \
+  --build-arg "BRANCH=${BRANCH}" \
+  --tag "$FULL_IMAGE" \
+  ${ATTEST_FLAGS[@]+"${ATTEST_FLAGS[@]}"} \
+  "$ACTION_FLAG" \
+  .
 
 BUILD_DURATION=$(( $(date +%s) - BUILD_START ))
 ok "Build selesai dalam ${BUILD_DURATION}s"
 
-IMAGE_SIZE=$(docker image inspect "$FULL_IMAGE" --format='{{.Size}}' \
-  | awk '{printf "%.1f MB", $1/1024/1024}')
-info "Ukuran image: ${BOLD}$IMAGE_SIZE${RESET}"
+# ─── Output Summary ───────────────────────────────────────────────────────────
+BUILD_OUTPUT=$(python3 -c "
+import json
+print(json.dumps({
+  'image':  '${DOCKER_ORG}/${DOCKER_REPO}',
+  'tag':    '${IMAGE_TAG}',
+  'branch': '${BRANCH}',
+  'mode':   '${MODE_STR}'
+}, indent=2))
+")
 
-# ─── Step 3: Push ────────────────────────────────────────────────────────────
-if [[ "$PUSH" == true ]]; then
-  step "3/3 Selesai"
-  ok "Push selesai! → https://hub.docker.com/r/${DOCKER_ORG}/${DOCKER_REPO}"
+echo
+if [[ "$PUSH" == "true" ]]; then
+  ok "Image pushed successfully!"
 else
-  warn "3/3 Push dilewati (--no-push)"
+  ok "Image loaded locally successfully!"
+  warn "Attestations (SBOM/Provenance) skipped for local build (not supported by local daemon)."
 fi
-
-echo -e "\n${GREEN}${BOLD}✅ CI selesai! Image: $FULL_IMAGE (${IMAGE_SIZE})${RESET}\n"
+echo
+echo "$BUILD_OUTPUT"
