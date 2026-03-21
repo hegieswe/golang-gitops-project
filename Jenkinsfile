@@ -23,6 +23,9 @@ pipeline {
                 // This will checkout golang-gitops-project (the app)
                 checkout scm
                 sh 'chmod +x ./ci.sh' // Ensure script is executable
+                script {
+                    env.APP_COMMIT = sh(script: 'git rev-parse --short=7 HEAD', returnStdout: true).trim()
+                }
             }
         }
 
@@ -56,7 +59,7 @@ pipeline {
                         chmod +x ./cd.sh
                         
                         # Execute deployment to development environment
-                        ./cd.sh -e development
+                        ./cd.sh -e development --tags "golang-gitops-project:${APP_COMMIT}"
                         
                         # Optional: push changes back to k8s-manifest repository
                         # git config --global user.email "jenkins@example.com"
