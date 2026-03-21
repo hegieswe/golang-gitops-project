@@ -46,24 +46,24 @@ pipeline {
                     // Replace github.com/hegieswe/k8s-manifest.git if it differs
                     withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
                         sh '''
-                        // Remove if previously existing in workspace
+                        # Remove if previously existing in workspace
                         rm -rf k8s-manifest
                         
-                        // Clone repository
+                        # Clone repository
                         git clone https://${GIT_USER}:${GIT_PASS}@github.com/hegieswe/k8s-manifest.git
                         
                         cd k8s-manifest
                         chmod +x ./cd.sh
                         
-                        // Execute deployment to development environment
+                        # Execute deployment to development environment
                         ./cd.sh -e development
                         
-                        // Optional: push changes back to k8s-manifest repository
-                        // git config --global user.email "jenkins@example.com"
-                        // git config --global user.name "Jenkins CI"
-                        // git add .
-                        // git commit -m "Auto-update manifest image [skip ci]" || echo "No changes to commit"
-                        // git push origin main
+                        # Optional: push changes back to k8s-manifest repository
+                        # git config --global user.email "jenkins@example.com"
+                        # git config --global user.name "Jenkins CI"
+                        # git add .
+                        # git commit -m "Auto-update manifest image [skip ci]" || echo "No changes to commit"
+                        # git push origin main
                         '''
                     }
                 }
