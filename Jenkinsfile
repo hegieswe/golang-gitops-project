@@ -4,6 +4,7 @@ pipeline {
     environment {
         // Global variables required by the scripts
         DOCKER_ORG = 'hegieswe'
+        DOCKER_REPO = 'golang-gitops-project'
         
         // Jenkins Credentials mappings
         // 1. Docker Hub 

@@ -15,9 +15,9 @@ DOCKER_ORG="hegieswe"
 DEFAULT_PLATFORM="linux/amd64,linux/arm64"
 BUILDER_NAME="attest-builder"
 
-# Auto-detect Docker Repo Name dari nama folder repository
+# Auto-detect Docker Repo Name dari nama folder repository (mendukung env override dari Jenkins)
 GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-DOCKER_REPO=$(basename "$GIT_ROOT")
+DOCKER_REPO="${DOCKER_REPO:-$(basename "$GIT_ROOT")}"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Warna
