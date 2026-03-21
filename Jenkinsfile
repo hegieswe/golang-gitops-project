@@ -62,12 +62,12 @@ pipeline {
                         # Execute deployment to development environment
                         ./cd.sh -e development --tags "golang-gitops-project:${APP_COMMIT}"
                         
-                        # Optional: push changes back to k8s-manifest repository
-                        # git config --global user.email "jenkins@example.com"
-                        # git config --global user.name "Jenkins CI"
-                        # git add .
-                        # git commit -m "Auto-update manifest image [skip ci]" || echo "No changes to commit"
-                        # git push origin main
+                        # Wajib: push perubahan manifest kembali ke repository k8s-manifest
+                        git config --global user.email "jenkins@example.com"
+                        git config --global user.name "Jenkins CI"
+                        git add .
+                        git commit -m "Auto-update manifest image [skip ci]" || echo "No changes to commit"
+                        git push origin main
                         '''
                     }
                 }
