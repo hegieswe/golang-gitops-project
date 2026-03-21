@@ -23,7 +23,6 @@ pipeline {
             steps {
                 // This will checkout golang-gitops-project (the app)
                 checkout scm
-                sh 'chmod +x ./ci.sh' // Ensure script is executable
                 script {
                     env.APP_COMMIT = sh(script: 'git rev-parse --short=7 HEAD', returnStdout: true).trim()
                 }
@@ -34,9 +33,8 @@ pipeline {
             steps {
                 script {
                     echo "Starting CI Build Process..."
-                    // Execute ci.sh script. It automatically uses DOCKER_USERNAME and DOCKER_PASSWORD
-                    // DOCKER_ORG is defined in the environment block.
-                    sh './ci.sh'
+                    // Execute global ci.sh script.
+                    sh 'ci.sh'
                 }
             }
         }
@@ -46,8 +44,6 @@ pipeline {
                 script {
                     echo "Starting CD Deployment Process..."
                     
-                    // Clone K8s Manifest Repo
-                    // Replace github.com/hegieswe/k8s-manifest.git if it differs
                     withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
                         sh '''
                         # Remove if previously existing in workspace
@@ -57,10 +53,9 @@ pipeline {
                         git clone https://${GIT_USER}:${GIT_PASS}@github.com/hegieswe/k8s-manifest.git
                         
                         cd k8s-manifest
-                        chmod +x ./cd.sh
                         
-                        # Execute deployment to development environment
-                        ./cd.sh -e development --tags "golang-gitops-project:${APP_COMMIT}"
+                        # Execute global cd.sh
+                        cd.sh -e development --tags "golang-gitops-project:${APP_COMMIT}"
                         
                         # Wajib: push perubahan manifest kembali ke repository k8s-manifest
                         git config --global user.email "jenkins@example.com"
