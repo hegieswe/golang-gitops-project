@@ -8,7 +8,7 @@ import (
 func main() {
 	// Endpoint Utama
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Hello, DevOps! Aplikasi ini berjalan untuk testing CI/CD GitOps, testing Hegi testtest.")
+		fmt.Fprintf(w, "Hello, DevOps! Aplikasi ini berjalan untuk testing CI/CD GitOps, HELOOOOOWWW.")
 	})
 
 	// Endpoint untuk Liveness & Readiness Probe
