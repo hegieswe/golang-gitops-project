@@ -3,31 +3,31 @@ pipeline {
 
     environment {
         // Global variables required by the scripts
+        // Sesuaikan dengan org Docker Hub Anda
         DOCKER_ORG = 'hegieswe'
         
         // Jenkins Credentials mappings
-        // 1. Docker Hub 
         DOCKER_USERNAME = credentials('dockerhub-username')
         DOCKER_PASSWORD = credentials('dockerhub-password')
-        
-        // 2. Kubernetes Kubeconfig (Secret file)
         KUBECONFIG = credentials('k8s-kubeconfig-file')
-        
-        // 3. GitHub Credentials for pushing to k8s-manifest repo
         GITHUB_CRED = credentials('github-credentials')
     }
 
     stages {
         stage('Checkout Source Code') {
             steps {
-                // This will checkout the app repository
                 checkout scm
                 script {
-                    // Auto-detect commit hash and repo name dynamically from Git remote URL
+                    // Ambil commit hash
                     env.APP_COMMIT = sh(script: 'git rev-parse --short=7 HEAD', returnStdout: true).trim()
-                    env.APP_NAME   = sh(script: "git config --get remote.origin.url | sed -E 's/.*\\/([^\\/]+)(\\.git)?\$/\\1/' | sed 's/\\.git\$//'", returnStdout: true).trim()
                     
-                    // Inject DOCKER_REPO into environment so ci.sh catches it perfectly
+                    // ========================================================
+                    // PENTING: Ganti nama ini dengan "hi-golang-project" 
+                    // atau "hi-golang-project" sesuai dengan nama service
+                    // ========================================================
+                    env.APP_NAME   = 'hi-golang-project'
+                    
+                    // Inject ke var lingkungan agar tertangkap oleh ci.sh & cd.sh
                     env.DOCKER_REPO = env.APP_NAME
                 }
             }
@@ -37,7 +37,8 @@ pipeline {
             steps {
                 script {
                     echo "Starting CI Build Process for ${env.APP_NAME}..."
-                    // ci.sh automatically detects the repo name if DOCKER_REPO is not explicitly set
+                    // ci.sh otomatis akan nge-build dan mem-push image
+                    // dengan nama: hegieswe/hi-golang-project
                     sh 'ci.sh'
                 }
             }
@@ -50,18 +51,15 @@ pipeline {
                     
                     withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
                         sh '''
-                        # Remove if previously existing in workspace
                         rm -rf k8s-manifest
-                        
-                        # Clone repository
                         git clone https://${GIT_USER}:${GIT_PASS}@github.com/hegieswe/k8s-manifest.git
-                        
                         cd k8s-manifest
                         
-                        # Execute global cd.sh dynamically using APP_NAME
+                        # cd.sh akan mencari folder "hi-golang-project" 
+                        # di dalam "k8s-manifest/base/" untuk di-kuromize/deploy
                         cd.sh -e development --tags "${APP_NAME}:${APP_COMMIT}"
                         
-                        # Wajib: push perubahan manifest kembali ke repository k8s-manifest
+                        # Wajib: push perubahan terbaru ke GitHub (GitOps)
                         git config --global user.email "jenkins@example.com"
                         git config --global user.name "Jenkins CI"
                         git add .
