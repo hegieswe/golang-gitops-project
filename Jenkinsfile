@@ -22,7 +22,7 @@ pipeline {
                     env.APP_COMMIT = sh(script: 'git rev-parse --short=7 HEAD', returnStdout: true).trim()
                     
                     // ========================================================
-                    // PENTING: Ganti nama ini dengan "hi-golang-project" 
+                    // PENTING: Ganti nama ini dengan "hi-golang-project".
                     // atau "hi-golang-project" sesuai dengan nama service
                     // ========================================================
                     env.APP_NAME   = 'hi-golang-project'
